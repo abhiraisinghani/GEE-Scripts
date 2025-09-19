@@ -11,4 +11,7 @@ Collection of GEE practice scripts – includes my own experiments as well as co
  SAR_LULC<br>
  <img width="200" height="200" alt="image" src="https://github.com/user-attachments/assets/897885af-98f8-4336-843c-d3eb7197b7e1" />
  <img width="200" height="200" alt="image" src="https://github.com/user-attachments/assets/3baeab4c-ccb2-42ac-bbdb-05192c78488b" />
+<br><br>
+Cloud Mask <br>
+<img width="528" height="200" alt="image" src="https://github.com/user-attachments/assets/5ab4fdcd-aaf4-4fb3-b9c2-3769a39ac857" />
 <br>
