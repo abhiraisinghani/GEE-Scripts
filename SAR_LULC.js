@@ -40,33 +40,6 @@ var collectionVH = ee.ImageCollection('COPERNICUS/S1_GRD')
 var SARVV = collectionVV.mosaic();
 var SARVH = collectionVH.mosaic();
 
-//Cloud Mask
-// Function to cloud mask from the QA_PIXEL band of Landsat 8 SR data.
-function maskL8sr(image) {
-  // Bits 3 and 5 are cloud shadows and clouds, respectively.
-  var cloudShadowBitMask = 1 << 3;
-  var cloudsBitMask = 1 << 5;
-  // Get the QA_PIXEL band.
-  var qa = image.select('QA_PIXEL');
-  // Both flags should be set to zero, indicating clear conditions.
-  var mask = qa.bitwiseAnd(cloudShadowBitMask).eq(0)
-  .and(qa.bitwiseAnd(cloudsBitMask).eq(0));
-  // Return the masked image, scaled to reflectance, without the QA bands.
-   return image.updateMask(mask).divide(10000)
-  .select("SR_B[0-9]*")
-  .copyProperties(image, ["system:time_start"]);
-  }
-
-// Extract the images and apply cloudmask from the Landsat8 collection
-var collectionl8 = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
-.filterDate(startDate, endDate)
-.filterBounds(roi)
-.map(maskL8sr);
-//take median layer>generate NDVI> make new collection
-var comp = collectionl8.median();
-var ndvi = comp.normalizedDifference(['SR_B5', 'SR_B4']).rename('NDVI');
-var composite = ee.Image.cat(comp,ndvi);
-
 //Apply filter to reduce speckle in SAR Data
 var SMOOTHING_RADIUS = 50;
 var SARVV_filtered = SARVV.focal_mean(SMOOTHING_RADIUS, 'circle', 'meters');
@@ -86,3 +59,19 @@ var classifier = ee.Classifier.libsvm().train({
   classProperty: 'landcover',
   inputProperties: bands
 });
+
+//apply the classifier
+var classified = final.select(bands)
+  .classify(classifier)
+  .clip(roi);
+  //remove salt-and-pepper noise (mode value)
+var classified2 = classified.focal_mode({radius: 1, kernelType: 'circle', iterations: 1});
+
+//Display the Classification
+Map.addLayer(classified, 
+{min: 1, max: 5, palette: ['0f65be', 'ff0e0e', 'ffba45', '0fc200', 'd7ff93']},
+'SAR Classification',1);
+Map.addLayer(classified2, 
+{min: 1, max: 5, palette: ['0f65be', 'ff0e0e', 'ffba45', '0fc200', 'd7ff93']},
+'SAR Classification2',1);
+
