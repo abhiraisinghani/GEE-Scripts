@@ -1,18 +1,30 @@
-//Define geometry first (ROI)
+// config
+Map.centerObject(aoi,10);
 
-//  PREPARE THE IMAGERY
+var year = 2013; // 2013 tot 2024
+var start = ee.Date.fromYMD(year, 1, 1);
+var end = start.advance(1, 'year');
+
+var seasons = [ 
+  { name: 'Winter', start: year + '-01-01', end: year + '-04-01' },
+  { name: 'Summer', start: year + '-04-01', end: year + '-07-01' },
+  { name: 'Monsoon', start: year + '-07-01', end: year + '-10-01' },
+  { name: 'Post-Monsoon', start: year + '-10-01', end: year + '-12-31' } ];
 
 // import Landsat 8 images 
-var L8C = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
-    .filterBounds(geometry)
-    .filterDate('2023-01-01', '2024-01-01')
-    .filter(ee.Filter.lt('CLOUD_COVER',10)); // Get the whole year first
+var collection = ee.ImageCollection("LANDSAT/LC08/C02/T1_L2")
+    .filterBounds(aoi)
+    .filterDate(start,end)
+    .filter(ee.Filter.lt('CLOUD_COVER',10)) // Get the whole year first
+    .map(function(image) {
+      return image.clip(aoi);});
+      
+      
+print(collection);
 
-// Apply scale and offset to Landsat 8 images
-// Calculate NDVI and NDWI indices
-var l8_preprocess = function (image) {
+var preprocess = function (image) {
+
     // A function to mask clouds and shadows
-
     function cloudMask(img) {
         var qa = img.select('QA_PIXEL');
         var dilate = (1 << 1);
@@ -26,38 +38,33 @@ var l8_preprocess = function (image) {
         return img.updateMask(mask);
     }
 
-    var processed = cloudMask(image).clip(geometry); // Apply cloud mask
-    var bands = processed.select('SR_B[2-7]');
-    var tir = processed.select('ST_B10');
+    var processed = cloudMask(image); // Apply cloud mask
+    processed = processed.select(['SR_B2', 'SR_B3', 'SR_B4', 'SR_B5', 'SR_B6', 'SR_B7'],
+                                 ['B2','B3','B4','B5','B6','B7']);
+                                 
+                                 
+    // scale bands
+    var bands_scaled = processed.multiply(2.75e-05).add(-0.2);
     
-    
-    var ndvi = processed.normalizedDifference(['SR_B5', 'SR_B4']).rename('NDVI');
-    var ndwi = processed.normalizedDifference(['SR_B3', 'SR_B5']).rename('NDWI');
+    //calculating indices
+    var ndvi = bands_scaled.normalizedDifference(['B5', 'B4']).rename('NDVI');
+    var ndwi = bands_scaled.normalizedDifference(['B3', 'B5']).rename('NDWI');
 
-  // scale after calculating indices with the original values
-    var bands_scaled = bands.multiply(2.75e-05).add(-0.2);
-    var tir_scaled = tir.multiply(0.00341802).add(149);
-
-    return bands_scaled.addBands(tir_scaled).addBands(ndvi).addBands(ndwi)
+    return bands_scaled.addBands(ndvi).addBands(ndwi)
         .copyProperties(image, ["system:time_start"]);
 };
 
 //CREATE SEASONAL COMPOSITES
 
-var year = '2023';
-// Define the seasons
-var seasons = [
-  {name: 'spring', start: year + '-03-21', end: year + '-06-20'},
-  {name: 'summer', start: year + '-06-21', end: year + '-09-22'},
-  {name: 'autumn', start: year + '-09-23', end: year + '-12-21'},
-  {name: 'winter', start: year + '-01-01', end: year + '-03-20'}
-];
-
 // Function to create a seasonal median composite
 var createSeasonalComposite = function(season) {
-  var seasonal_collection = L8C.filterDate(season.start, season.end);
-  var processed_collection = seasonal_collection.map(l8_preprocess);
+  
+  var seasonal_collection = collection.filterDate(season.start, season.end);
+  
+  var processed_collection = seasonal_collection.map(preprocess);
+  
   var median_composite = processed_collection.median();
+  
   // Rename bands to be unique for each season
   return median_composite.rename(median_composite.bandNames().map(function(b) {
     return ee.String(season.name).cat('_').cat(b);
@@ -69,18 +76,18 @@ var seasonal_images = seasons.map(createSeasonalComposite);
 
 // Convert the list of images into a single multi-band image (a stack)
 var landsat_stack = ee.ImageCollection.fromImages(seasonal_images).toBands();
+
 // The band names will now be like 'winter_SR_B2', 'summer_NDVI', etc.
 
 
 // import MODIS LC product with 500m resolution
 var MODIS_C = ee.ImageCollection("MODIS/061/MCD12Q1")
-    .filterDate('2023-01-01', '2024-01-01')
+    .filterDate(start,end)
     .select('LC_Type2')
     .first() // Use first() to get a single image
-    .clip(geometry);
-
-//SAMPLING AND CLASSIFICATION ---
-
+    .clip(aoi);
+    
+  
 // Concat the MODIS product with the new seasonal Landsat stack
 var mixed = ee.Image.cat([landsat_stack, MODIS_C]);
 
@@ -91,7 +98,7 @@ var input_properties = landsat_stack.bandNames();
 var full_sample = mixed.stratifiedSample({
     numPoints: 200, 
     classBand: 'LC_Type2',
-    region: geometry,
+    region: aoi,
     scale: 30,
     geometries: true
 });
@@ -116,24 +123,93 @@ var classifier = ee.Classifier.smileRandomForest({
 
 // Training Accuracy
 var train_acc = classifier.confusionMatrix();
-print(train_acc.accuracy());
-print(train_acc.kappa());
+print(
+  ee.String('Train Accuracy: ')
+    .cat(train_acc.accuracy().format('%.4f'))
+    .cat(' | Train Kappa: ')
+    .cat(train_acc.kappa().format('%.4f'))
+);
 
 // Validation Accuracy
 var validated = validation_data.classify(classifier);
 var test_accuracy = validated.errorMatrix('LC_Type2', 'classification');
-print(test_accuracy.accuracy());
-print(test_accuracy.kappa());
 
+print(
+  ee.String('Train Accuracy: ')
+    .cat(test_accuracy.accuracy().format('%.4f'))
+    .cat(' | Train Kappa: ')
+    .cat(test_accuracy.kappa().format('%.4f'))
+);
+
+// Creating LULC
+
+var landsatProjection = collection.first().select('SR_B2').projection();
+  
+// Classify the entire seasonal stack
+
+var classified_original = landsat_stack.classify(classifier);
+classified_original=classified_original.setDefaultProjection(landsatProjection);
+
+var classified_smoothed = classified_original.focal_mode({radius: 2,  units: 'pixels'});
 
 // VISUALIZATION
-
-// Classify the entire seasonal stack
-var classified = landsat_stack.classify(classifier);
-
 // Define MODIS land cover visualization palette
 var vis = {min: 0, max: 15, palette: ['1c0dff', '05450a', '086a10', '54a708', '78d203', '009900', 'c6b044', 'dcd159', 'dade48', 'fbff13', 'b6ff05', '27ff87', 'c24f44', 'a5a5a5', 'ff6d4c', 'f9ffa4']};
 
-Map.centerObject(geometry, 8);
-Map.addLayer(classified, vis, 'L8_LULC_Upsampled_Seasonal');
+Map.addLayer(classified_original, vis, 'LULC');
+Map.addLayer(classified_smoothed, vis, 'LULC_resampled');
 Map.addLayer(MODIS_C,vis,'MODIS Original Product');
+
+// Stastics
+
+function calculateAccuracy(image, name) {
+
+  var image_modis = image
+    .reduceResolution({
+      reducer: ee.Reducer.mode(),
+      maxPixels: 1024
+    })
+    .reproject({
+      crs: MODIS_C.projection()
+    });
+
+  var comparison = ee.Image.cat([
+    MODIS_C.rename('MODIS'),
+    image_modis.rename('Landsat')
+  ]);
+
+  var samples = comparison.sample({
+    region: aoi,
+    scale: 500,
+    projection: MODIS_C.projection(),
+    geometries: false,
+    tileScale: 4
+  });
+
+  var matrix = samples.errorMatrix(
+    'MODIS',
+    'Landsat'
+  );
+  
+  print(
+  ee.String(name + ' Classification Statistics: \n')
+    .cat('Accuracy: ')
+    .cat(matrix.accuracy().format('%.4f'))
+    .cat(' | Kappa: ')
+    .cat(matrix.kappa().format('%.4f'))
+);
+
+  print(matrix);
+
+}
+
+
+calculateAccuracy(
+  classified_original,
+  'Original'
+);
+
+calculateAccuracy(
+  classified_smoothed,
+  'Smoothed'
+);
