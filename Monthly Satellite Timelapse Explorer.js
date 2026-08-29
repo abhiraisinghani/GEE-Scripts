@@ -7,7 +7,7 @@ var MONTH_NAMES = [
 
 var YEAR_LIST = (function () {
   var years = [];
-  for (var y = 2015; y <= 2026; y++) years.push(String(y));
+  for (var y = 2013; y <= 2026; y++) years.push(String(y));
   return years;
 })();
 
@@ -58,6 +58,7 @@ function prepareSentinel2(aoi, start, end, cloudPct) {
     .map(function (img) {
       return img.select(['B4', 'B3', 'B2'])
         .multiply(0.0001)
+        .toFloat()
         .rename(['R', 'G', 'B'])
         .set('system:time_start', img.get('system:time_start'));
     });
@@ -82,6 +83,7 @@ function prepareLandsatOne(collectionId, aoi, start, end, cloudPct) {
     .map(function (img) {
       return img.select(['SR_B4', 'SR_B3', 'SR_B2'])
         .multiply(0.0000275).add(-0.2)
+        .toFloat()
         .rename(['R', 'G', 'B'])
         .set('system:time_start', img.get('system:time_start'));
     });
@@ -278,8 +280,8 @@ var qualitySelect = ui.Select({
 var qualityHintLabel = ui.Label(
   'Higher quality = larger files and slower rendering. Very high resolution ' +
   'over a large AOI or a long month range can exceed the GIF download\'s size ' +
-  'limit — if that happens, drop to Standard, or use "Export to Drive" instead ' +
-  '(it runs as a background task with no such limit).',
+  'limit — if that happens, drop to Standard',//', or use "Export to Drive" instead ' +
+  //'(it runs as a background task with no such limit).'
   { fontSize: '11px', color: 'gray' }
 );
 var gifBtn = ui.Button('Download Timelapse (GIF)', function () { createGIFPreview(); });
@@ -639,8 +641,8 @@ controlPanel.add(qualityHintLabel);
 controlPanel.add(gifBtn);
 controlPanel.add(gifHintLabel);
 controlPanel.add(gifPreviewPanel);
-controlPanel.add(ui.Label('— or, for a higher-resolution MP4 —', { fontSize: '11px', color: 'gray' }));
-controlPanel.add(exportBtn);
+//controlPanel.add(ui.Label('— or, for a higher-resolution MP4 —', { fontSize: '11px', color: 'gray' }));
+//controlPanel.add(exportBtn);
 
 // Display Area
 var mapContainer = ui.Panel({
