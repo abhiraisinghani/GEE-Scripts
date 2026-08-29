@@ -6,4 +6,4 @@ Collection of GEE practice scripts – includes my own experiments as well as co
 - [28-08-2026] Temperature Anomaly - Calculating monthly temperature anomaly using MODIS data <br>
 - [28-08-2026] Landcover Growth - Selected landcover growth using Sentinel-10 DW LULC <br>
 - [29-08-2026] Classifying LULC using MODIS LULC data - classifying LULC (Landsat) annually using sample points from MODIS (2013-2024) <br>
-- [29-08-2026] APP - Monthly Satellite Time Lapse - give gif for selected AOI for the time range, option to downlaod GIG <br> 
+- [29-08-2026] APP - Monthly Satellite Time Lapse - give gif for selected AOI for the time range, option to download GIF <br> 
